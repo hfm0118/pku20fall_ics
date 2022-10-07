@@ -1,0 +1,10 @@
+popq rax
+movl eax,ecx
+movl ecx,edx
+movl edx,esi
+movq rsp,rax
+movq rax,rdi
+lea (rdi,rsi,1),rax
+movq rax,rdi
+
+offset+24

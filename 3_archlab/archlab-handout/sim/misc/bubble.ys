@@ -1,0 +1,72 @@
+#1900013010 Hu F.M.
+
+.pos 0 
+irmovq stack, %rsp  	  
+call main		
+halt			
+
+.align 8
+Array:
+.quad 0xbca
+.quad 0xcba
+.quad 0xacb
+.quad 0xcab
+.quad 0xabc
+.quad 0xbac
+
+main:
+	irmovq Array, %rdi
+	irmovq $0x6, %rsi
+	call bubble_sort
+	ret
+
+bubble_sort:
+	pushq %r8	#i
+	pushq %r9	#last
+	pushq %r10
+	pushq %r11
+	pushq %r12	#const8
+	pushq %r13
+	rrmovq %rdi, %r9
+	addq %rsi, %rsi
+	addq %rsi, %rsi
+	addq %rsi, %rsi	
+	addq %rsi, %r9
+	irmovq $0x8, %r12
+	subq %r12, %r9
+outerloop:
+	rrmovq %r9, %r10
+	subq %rdi, %r10
+	jle return
+	
+	rrmovq %rdi, %r8
+innerloop:
+	rrmovq %r8, %r10
+	subq %r9, %r10
+	jge label
+	mrmovq $0x8(%r8), %r11	#*i+1
+	mrmovq (%r8), %r10	#*i
+	rrmovq %r11, %r13
+	subq %r10, %r13
+	jge endif
+	rmmovq %r10, $0x8(%r8)
+	rmmovq %r11, (%r8)
+endif:	
+	addq %r12, %r8
+	jmp innerloop
+
+label:
+	subq %r12, %r9
+	jmp outerloop
+return:
+	popq %r13
+	popq %r12
+	popq %r11
+	popq %r10
+	popq %r9
+	popq %r8
+	ret
+
+.pos 0x200		
+stack:	
+	

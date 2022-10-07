@@ -1,0 +1,261 @@
+#######################################################################
+# Test for copying block of size 4;
+#######################################################################
+	.pos 0
+main:	irmovq Stack, %rsp  	# Set up stack pointer
+
+	# Set up arguments for copy function and then invoke it
+	irmovq $4, %rdx		# src and dst have 4 elements
+	irmovq dest, %rsi	# dst array
+	irmovq src, %rdi	# src array
+	call ncopy		 
+	halt			# should halt with num nonzeros in %rax
+StartFun:
+#/* $begin ncopy-ys */
+##################################################################
+# ncopy.ys - Copy a src block of len words to dst.
+# Return the number of positive words (>0) contained in src.
+
+# Include your name and ID here.
+
+# 1900013010 胡峰铭
+
+
+# Describe how and why you modified the baseline code.
+
+# Keywords:
+
+# 	iaddq，循环展开，二分搜索，load/use冒险
+
+# Description:
+
+# 1. 添加iaddq
+#	在pipe-full.hcl中添加了iaddq指令，具体实现与PartB类似。
+
+# 2. 循环展开（Loop部分）
+#	原代码中每次循环只执行一次移动。将循环展开使得每次循环执行n次移动。
+#	由于执行%rdi,%rsi递增和循环条件判断次数减少，理论上CPE将会随n的增加而递减。
+#	由于代码长度和增加n的收益递减，程序中选择n=9
+
+# 3. 余数部分的处理（Epilog部分）
+#	移动次数m=nk+r，其中k为循环次数，余数r满足0<=r<9
+#	可以使用二分搜索减少需要的判断次数。
+#	由于移动次数m较小的组对CPE的影响较大，因此应尽可能使较小的r得到较小的CPE。由于5.3中提到的对m=1,2的特殊处理，优先级排序如下：
+#	3>4>5>6>7>8>1>2>0
+#	因此可以构造如下的二分搜索树。由于可以执行jl,je,jg操作，此树实际上是三叉树...
+#                               r==3?
+#                            /    |    \
+#                        r==1?   E3    r==6?
+#                        /  \         /  |  \
+#                       E1 r==2?  r==5? E6 r==7?
+#                          /  \   /  \     /  \
+#                         E0  E2 E4  E5   E7  E8
+#	由于4.中对条件码的需要，搜索树需要保证跳转到标签Ex只能由jl和je实现
+# 4. 对冒险的处理
+#	原代码中相邻的mrmovq和rmmovq需要使用同一个寄存器，存在load/use冒险。判断数是否大于0从而决定是否%rax+1之间存在控制冒险。
+#	可以在上述指令中插入其它指令以优化程序性能，减少因bubble而造成的性能损失。
+#	具体地，本程序作了以下修改：
+#		mrmovq集中处理，避免mrmovq和rmmovq相邻造成的load/use冒险
+#		rmmovq插入andq和jle之间（因为rmmovq不会改变条件码）
+#		在余数部分将每一组判断%rax+1部分插入到下一组中。这样的错位需要跳转进入时条件码满足符号位<=0
+# 5. 其它优化
+# 5.1 删除了程序开头的xorq %rax,%rax
+#	%rax在程序开始时值总是0。这是一个糟糕的优化，但为了CPE我们不得不这么做。
+# 5.2 跳转的调整
+#	由于条件分支采取总是跳转的预测策略，因此可以优化跳转的设计使得跳转的可能性尽可能大。
+# 5.3 为%rdx=1和2建立快速通道
+#	由于测试数据分布和平均CPE的计算方式，%rdx较小的情形对于平均CPE有着惊人的影响。因此可以为较小的%rdx在程序开头设计特殊的条件判断。
+
+##################################################################
+# Do not modify this portion
+# Function prologue.
+# %rdi = src, %rsi = dst, %rdx = len
+ncopy:
+
+##################################################################
+# You can modify this portion
+	# Loop header
+#	xorq %rax, %rax
+
+# contain jumps for 0, 1, 2
+Prolog:	
+	iaddq $-2, %rdx
+	jg Init
+	jl P1
+	je E2
+P1:	iaddq $1, %rdx
+	je E1
+	ret
+
+Init:	iaddq $-7, %rdx
+	jge Loop
+	jmp Epilog
+
+# copy 9 words in a single loop
+Loop:
+	mrmovq (%rdi), %rbx	# read val from src...
+	mrmovq 8(%rdi), %rcx
+	mrmovq 16(%rdi), %r8
+	mrmovq 24(%rdi), %r9
+	mrmovq 32(%rdi), %r10
+	mrmovq 40(%rdi), %r11
+	mrmovq 48(%rdi), %r12
+	mrmovq 56(%rdi), %r13
+	mrmovq 64(%rdi), %r14
+
+	andq %rbx, %rbx
+	jle L1
+	iaddq $1, %rax
+L1:	andq %rcx, %rcx
+	rmmovq %rbx, (%rsi)
+	jle L2
+	iaddq $1, %rax
+L2:	andq %r8, %r8
+	rmmovq %rcx, 8(%rsi)
+	jle L3
+	iaddq $1, %rax	
+L3:	andq %r9, %r9
+	rmmovq %r8, 16(%rsi)
+	jle L4
+	iaddq $1, %rax
+L4:	andq %r10, %r10
+	rmmovq %r9, 24(%rsi)
+	jle L5
+	iaddq $1, %rax
+L5:	andq %r11, %r11
+	rmmovq %r10, 32(%rsi)
+	jle L6
+	iaddq $1, %rax
+L6:	andq %r12, %r12
+	rmmovq %r11, 40(%rsi)
+	jle L7
+	iaddq $1, %rax
+L7:	andq %r13, %r13
+	rmmovq %r12, 48(%rsi)
+	jle L8
+	iaddq $1, %rax
+L8:	andq %r14, %r14
+	rmmovq %r13, 56(%rsi)
+	jle L9
+	iaddq $1, %rax
+L9:	rmmovq %r14, 64(%rsi)
+	iaddq $72, %rdi		# src++
+	iaddq $72, %rsi		# dst++
+Ltest:	iaddq $-9, %rdx		# len >= 9?
+	jge Loop		# if so, goto Loop:
+
+# binary search	
+Epilog:
+	iaddq $6, %rdx		# len-3
+	jg C
+	je E3
+A:	iaddq $2, %rdx		# len-1
+	je E1
+	iaddq $-1, %rdx		# len-2
+	je E2
+	ret
+C:	iaddq $-3, %rdx		# len-6
+	jl CA
+	jg CC
+	jmp E6
+CA:	iaddq $1, %rdx		# len-5
+	jl E4
+	jmp E5
+CC:	iaddq $-1, %rdx		# len-7
+	je E7
+	
+E8:	mrmovq 56(%rdi), %r13
+	andq %r13, %r13
+	rmmovq %r13, 56(%rsi)
+E7:	mrmovq 48(%rdi), %r12
+	jle E70
+	iaddq $1, %rax
+E70:	rmmovq %r12, 48(%rsi)
+	andq %r12, %r12
+E6:	mrmovq 40(%rdi), %r11
+	jle E60
+	iaddq $1, %rax
+E60:	rmmovq %r11, 40(%rsi)
+	andq %r11, %r11
+E5:	mrmovq 32(%rdi), %r10
+	jle E50
+	iaddq $1, %rax
+E50:	rmmovq %r10, 32(%rsi)
+	andq %r10, %r10
+E4:	mrmovq 24(%rdi), %r9
+	jle E40
+	iaddq $1, %rax
+E40:	rmmovq %r9, 24(%rsi)
+	andq %r9, %r9
+E3:	mrmovq 16(%rdi), %r8
+	jle E30
+	iaddq $1, %rax
+E30:	rmmovq %r8, 16(%rsi)
+	andq %r8, %r8
+E2:	mrmovq 8(%rdi), %rcx
+	jle E20
+	iaddq $1, %rax
+E20:	rmmovq %rcx, 8(%rsi)
+	andq %rcx, %rcx
+E1:	mrmovq (%rdi), %rbx
+	jle E10
+	iaddq $1, %rax
+E10:	rmmovq %rbx, (%rsi)
+	andq %rbx, %rbx
+	jle Done
+	iaddq $1, %rax
+	ret
+
+##################################################################
+# Do not modify the following section of code
+# Function epilogue.
+Done:
+	ret
+##################################################################
+# Keep the following label at the end of your function
+End:
+#/* $end ncopy-ys */
+EndFun:
+
+###############################
+# Source and destination blocks 
+###############################
+	.align 8
+src:
+	.quad 1
+	.quad 2
+	.quad -3
+	.quad -4
+	.quad 0xbcdefa # This shouldn't get moved
+
+	.align 16
+Predest:
+	.quad 0xbcdefa
+dest:
+	.quad 0xcdefab
+	.quad 0xcdefab
+	.quad 0xcdefab
+	.quad 0xcdefab
+Postdest:
+	.quad 0xdefabc
+
+.align 8
+# Run time stack
+	.quad 0
+	.quad 0
+	.quad 0
+	.quad 0
+	.quad 0
+	.quad 0
+	.quad 0
+	.quad 0
+	.quad 0
+	.quad 0
+	.quad 0
+	.quad 0
+	.quad 0
+	.quad 0
+	.quad 0
+	.quad 0
+
+Stack:
